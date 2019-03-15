@@ -1,0 +1,255 @@
+---
+title: "Predicting heart disease with classification trees"
+author: "Ryan LeBon"
+date: "4/23/2018"
+output: html_document
+---
+
+<!-- change echo=FALSE to echo=TRUE to show code -->
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(prompt=TRUE, comment="", echo=TRUE)
+```
+
+In this report, I will be trying to predict heart disease using classification trees. This data set was donated on 1988-07-01 by David W. Aha and is used by [UC Irvine](https://archive.ics.uci.edu/ml/datasets/Heart+Disease) as a machine learning repository. There are also many relevent papers that cite this data set as well, which are located on the link above. The names and social security numbers of the patients were removed from the database, and replaced with dummy values. 
+
+```{r collapse=TRUE, warning=FALSE}
+library(rpart)
+library(rpart.plot)
+library(maptree)
+# the following utility files can be found attached to the assignment
+source("https://raw.githubusercontent.com/grbruns/cst383/master/lin-regr-util.R")
+source("https://raw.githubusercontent.com/grbruns/cst383/master/class-util.R")
+```
+
+### Reading and preprocessing the data
+
+```{r}
+heart = read.table("https://raw.githubusercontent.com/grbruns/cst383/master/heart.dat", quote = "/")
+names(heart) <- c("AGE", "SEX", "CHESTPAIN", "RESTBP", "CHOL",
+                  "SUGAR", "ECG", "MAXHR", "ANGINA", "DEP", "EXERCISE", "FLUOR",
+                  "THAL", "OUTPUT")
+names(heart) = tolower(names(heart))
+
+# convert output to factor
+heart$output = factor(heart$output)
+```
+
+### Data exploration
+In this data exploration we will look at the features that are categorical which pertain to the subjects who were being tested for heart disease. There are 270 rows in this data set. I created some barplots,boxplots, and plots, of the main features in order to analyze what was going on during this study. Please look at the summary below to see the types of features in the dataset.
+
+```{r}
+summary(heart)
+```
+
+```{r}
+str(heart)
+```
+This is the age of test subjects, as you can see the ages ranged from 25 to 80. The median age is represented by the line in the middle which was 54.43 years old.
+```{r}
+hist(heart$age,main="Age of test subjects",col="orangered",xlab="age",xlim=c(25,80))
+abline(v=mean(heart$age),lty=2)
+
+```
+
+In this barplot you can clearly see that there are more men then women in this study. There are exactly 183 males and 87 females.
+```{r}
+barplot(sort(table(heart$sex),decreasing = T),main="Sex of test subjects",ylab="Frequency",col="orangered",beside=T,names.arg=c("male","female"),ylim=c(0,200))
+```
+
+This barplot represents the levels of chest pain that the subjects were experiencing.  The levels go from typical angina being 'high chest pain' to asymptomatic being 'no chest pain'.
+According to google, "Angina often is described as pressure, squeezing, burning, or tightness in the chest. The pain or discomfort usually starts behind the breastbone. Pain from angina also can occur in the arms, shoulders, neck, jaw, throat, or back. The pain may feel like indigestion."
+```{r}
+barplot(table(heart$chestpain),main="Chest Pain Types",xlab="Chest Pain Quartile",ylim=c(0,150),col=c("orangered"),ylab="Frequency",names.arg=c("typical angina","atypical angina","non-anginal pain","asymptomatic "))
+```
+
+This is a boxplot, it is similar to the barplot above except it compares chest pain with ages. The median age is represented by the black bar inside of the orange boxes.
+```{r}
+symptoms <- c("typical angina","atypical angina","non-anginal pain","asymptomatic ")
+boxplot(age~chestpain,pch=8,col="orangered",data=heart,ylab="age",xlab="chest pain type",main="Chest pain based on ages")
+for(i in 1:4)
+  cat(sprintf("For the symptom %s at the index [%i] there were a total of  %i test subjects. \n",symptoms[i],i,length(heart$chestpain[heart$chestpain==i])))
+```
+
+This is a plot of ages and resting blood pressure, were the orange stars represent having heart disease and the blue stars represent having no heart disease.
+```{r}
+plot(age[output==2]~restbp[output==2],data=heart,pch=8,col=c("orangered"),xlab="resting blood pressure",ylab="ages")
+points(age[output==1]~restbp[output==1],data=heart,pch=8,col=c("blue"))
+legend("bottomright",legend=c("heart disease","no heart disease"),col=c("orangered","blue"),pch=8, cex=0.8)
+```
+
+This is a plot of ages and max heart rate, were the orange stars represent having heart disease and the blue stars represent having no heart disease.
+```{r}
+plot(age[output==2]~maxhr[output==2],data=heart,pch=8,col=c("orangered"),xlab="maximum heart rate",ylab="ages")
+points(age[output==1]~maxhr[output==1],data=heart,pch=8,col=c("blue"))
+legend("topleft",legend=c("heart disease","no heart disease"),col=c("orangered","blue"),pch=8, cex=0.8)
+```
+
+This is a plot of resting blood pressure and max heart rate, were the orange stars represent having heart disease and the blue stars represent having no heart disease.
+```{r}
+plot(restbp[output==2]~maxhr[output==2],pch=8,col="orangered",data=heart,xlab="maximum heart rate",ylab="resting blood pressure")
+points(restbp[output==1]~maxhr[output==1],pch=8,col="blue",data=heart)
+legend("topleft",legend=c("heart disease","no heart disease"),col=c("orangered","blue"),pch=8, cex=0.8)
+```
+
+### Building a classification tree
+
+This is the first classification tree that I built using all of the features on the training data set. The training data has a higher sample than the test data set so the predictions will be more accurate than the testing data set. The green nodes indicate having no heart disease while the pink nodes indicate having heart disease. If you take a look at the summary, we can see that the most important features in the training data set include; 'chest pain', 'thal', 'fluor', 'maxhr' and so on...
+
+```{r}
+# training and test sets
+set.seed(132)
+split = split_data(heart)
+tr_dat = split[[1]]
+te_dat = split[[2]]
+
+first_fit <- rpart(output~.,data=tr_dat,method="class")
+prp(first_fit, extra="auto", varlen=-10,
+    main="Classification tree for heart disease based on all training data features",
+    box.col=c("palegreen", "pink")[first_fit$frame$yval],branch=1)
+summary(first_fit)
+
+```
+Here are the predictions based off of the first classification tree.
+```{r}
+prediction <- predict(first_fit,te_dat,type="class")
+actuals = te_dat$output
+table(actuals, prediction)
+mean(actuals == prediction)
+
+```
+
+### Classifying test data
+The green nodes indicate having no heart disease while the pink nodes indicate having heart disease. On  the first two tree's I fitted the data to the testing data. On tree's three and four I fitted the models to the training data.
+
+#### First Classification Tree
+This tree was fitted to the features: 'chestpain','thal', and 'fluor'.
+```{r}
+fit <- rpart(output~chestpain+thal+fluor,data=te_dat,method="class")
+prp(fit, extra="auto", varlen=-10,
+    main="Classification tree for heart disease based off of the testing data set",
+    box.col=c("palegreen", "pink")[fit$frame$yval],branch=1)
+```
+
+#### Second Classification Tree
+This tree was fitted to the features: 'chol' and 'age'.
+```{r}
+fit3 <- rpart(output~chol+age,data=te_dat,method="class")
+prp(fit3, extra="auto", varlen=-10,
+    main="Classification tree for heart disease based off of the testing data set",
+    box.col=c("palegreen", "pink")[fit3$frame$yval],branch=1)
+```
+
+#### Third Classification Tree
+This tree was fitted to the features: 'chestpain','thal', and 'fluor'.
+```{r}
+fit2 <- rpart(output~chestpain+thal+fluor,data=tr_dat,method="class")
+prp(fit2, extra="auto", varlen=-10,
+    main="Classification tree for heart disease based off of the training data set",
+    box.col=c("palegreen", "pink")[fit2$frame$yval],branch=1)
+```
+
+#### Fourth Classification Tree
+This tree was fitted to the features: 'chol' and 'age'.
+```{r}
+fit4 <- rpart(output~chol+age,data=tr_dat,method="class")
+prp(fit4, extra="auto", varlen=-10,
+    main="Classification tree for heart disease based off of the training data set",
+    box.col=c("palegreen", "pink")[fit4$frame$yval],branch=1)
+```
+
+### Assessing the model
+
+Here are the confusion matrices and the accuracy of the classification trees that are listed above.
+ 
+#### First Classification Tree Confusion Matrix and Accuracy
+```{r}
+predicted = predict(fit, te_dat, type="class")
+actual = te_dat$output
+table(actual, predicted)
+mean(actual == predicted)
+```
+
+#### Second Classification Tree Confusion Matrix and Accuracy
+```{r}
+predicted3 <- predict(fit3,te_dat,type="class")
+actual3 <- te_dat$output
+table(actual3,predicted3)
+mean(actual3==predicted3)
+```
+
+#### Third Classification Tree Confusion Matrix and Accuracy
+```{r}
+predicted2 <- predict(fit2,tr_dat,type="class")
+actual2 <- tr_dat$output
+table(actual2,predicted2)
+mean(actual2==predicted2)
+```
+
+#### Fourth Classification Tree Confusion Matrix and Accuracy
+```{r}
+predicted4 <- predict(fit4,tr_dat,type="class")
+actual4 <- tr_dat$output
+table(actual4,predicted4)
+mean(actual4==predicted4)
+```
+
+
+#### Learning Curve
+
+This is a learning curve that shows use the test error rate and the training size of the data. The training size is the number of rows that are located inside of the training dataset. This is good to see because the learning curve is very useful in data science.
+It helps in observing whether our model is having the high bias or high variance problem. The X-Axis is the number of samples (training set size) and the Y-Axis is the Error Rate ((RSS/J(theta)/cost function )). The learning curve is fitted to all of the features.
+
+
+```{r}
+create_learning_curve <- function(){
+
+  te_errs = c()
+  
+  tr_errs = c()
+  
+  te_actual = te_dat$output
+  
+  tr_sizes = seq(100, nrow(tr_dat), length.out=10)
+  
+  for (tr_size in tr_sizes) {
+    
+    tr_dat1 = tr_dat[1:tr_size,]
+    
+    tr_actual = tr_dat1$output
+    
+    
+    fit = rpart(output~. , method = "class" , data = tr_dat)
+    
+    # error on training set
+    
+    tr_predicted = predict(fit, tr_dat1, type="class")
+    
+    err = mean(tr_actual != tr_predicted)
+    
+    tr_errs = c(tr_errs, err)
+    
+    
+    
+    # error on test set
+    
+    te_predicted = predict(fit, te_dat, type="class")
+    
+    err = mean(te_actual != te_predicted)
+    
+    te_errs = c(te_errs, err)
+    
+  }
+  
+  plot(tr_sizes , tr_errs   ,type = "b" , ylim = c(0, 0.8) , ylab = "error rate", xlab="Training Set Size", col = "forestgreen",main="Learning Curve")
+  par(new = TRUE)
+  plot(tr_sizes , te_errs   ,type = "b" ,ylim = c(0 , 0.8), ylab = "error rate" , xlab="Training Set Size", col = "orangered",main="Learning Curve")
+  
+  legend("topleft",c("training error","test error"),fill=c("forestgreen","orangered"),horiz=TRUE,cex=0.7)
+  }
+
+create_learning_curve()
+
+```
+
+
+
